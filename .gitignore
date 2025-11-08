@@ -1,0 +1,5 @@
+/.venv/
+__pycache__
+/.papers/
+*.egg-info/
+.python-version
