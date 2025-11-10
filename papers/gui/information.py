@@ -8,7 +8,6 @@ class Information(QtWidgets.QWidget):
         super().__init__()
 
         layout = QtWidgets.QVBoxLayout()
-        # layout.setContentsMargins(0, 0, 0, 0)
         self.setLayout(layout)
 
         self.notes_view = QtWidgets.QTextEdit()

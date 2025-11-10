@@ -1,138 +1,181 @@
+import sys
 from pathlib import Path
-from sqlalchemy import create_engine, Column, Integer, String, Text
-from sqlalchemy.engine import Engine
-from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
+from typing import Any
+
+import sqlalchemy as sqla
+from sqlalchemy import Column, ForeignKey, Integer, MetaData, String, Table, Text
 
 import papers.configuration
+import papers.models
+
+if 'production' not in sys.argv[1:]:
+    papers.configuration.configuration.root_directory = Path('.papers')
+
+db_path = papers.configuration.configuration.root_directory / 'papers.db'
+db_path.parent.mkdir(parents=True, exist_ok=True)
+
+engine = sqla.create_engine(f'sqlite:///{db_path}', echo=True)
+
+metadata = MetaData()
+
+paper_table = Table(
+    'paper',
+    metadata,
+    Column('id', Integer, primary_key=True, autoincrement=True),
+    Column('reference', String, nullable=True),
+    Column('bib_path', String, nullable=True),
+    Column('pdf_path', String, nullable=True),
+    Column('title', String, nullable=True),
+    Column('authors', String, nullable=True),
+    Column('date', String, nullable=True),
+    Column('notes', Text, nullable=True),
+    Column('pdf_text', Text, nullable=True),
+)
+
+collection_table = Table(
+    'collection',
+    metadata,
+    Column('id', Integer, primary_key=True, autoincrement=True),
+    Column('name', String, nullable=False),
+)
+
+paper_collection_table = Table(
+    'paper_collection',
+    metadata,
+    Column('paper_id', Integer, ForeignKey('paper.id'), primary_key=True),
+    Column('collection_id', Integer, ForeignKey('collection.id'), primary_key=True),
+)
 
 
-class Base(DeclarativeBase):
-    pass
+metadata.create_all(engine, checkfirst=True)
 
 
-class Paper(Base):
-    __tablename__ = 'papers'
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    reference = Column(String, nullable=True)
-    bib_path = Column(String, nullable=True)
-    pdf_path = Column(String, nullable=True)
-    title = Column(String, nullable=True)
-    authors = Column(String, nullable=True)
-    date = Column(String, nullable=True)
-    notes = Column(Text, nullable=True)
-    pdf_text = Column(Text, nullable=True)
+def insert_paper(paper: papers.models.Paper) -> int:
+    with engine.begin() as connection:
+        result = connection.execute(
+            sqla.insert(paper_table),
+            {
+                'reference': paper.reference,
+                'title': paper.title,
+                'authors': paper.authors,
+                'date': paper.date,
+                'bib_path': paper.bib_path,
+                'pdf_path': paper.pdf_path,
+                'notes': paper.notes,
+                'pdf_text': paper.pdf_text,
+            },
+        )
+    assert result.inserted_primary_key is not None
+    (key,) = result.inserted_primary_key
+    print('inserted paper with id', key)
+    return key
 
 
-_engine: Engine | None = None
-_Session: sessionmaker[Session] = None  # type: ignore
+def update_paper(paper_id: int, **fields: Any) -> None:
+    with engine.begin() as connection:
+        connection.execute(
+            sqla.update(paper_table).where(paper_table.c.id == paper_id).values(**fields),
+        )
 
 
-def _init():
-    global _engine, _Session
-    if _engine is None:
-        db_path = papers.configuration.configuration.root_directory / 'papers.db'
-        db_path.parent.mkdir(parents=True, exist_ok=True)
-        _engine = create_engine(f'sqlite:///{db_path}')
-        Base.metadata.create_all(_engine)
-        _Session = sessionmaker(bind=_engine)
+def remove_paper(paper_id: int) -> None:
+    with engine.begin() as connection:
+        connection.execute(
+            sqla.delete(paper_table),
+            {
+                'id': paper_id,
+            },
+        )
 
 
-def insert(
-    reference: str | None = None,
-    title: str | None = None,
-    authors: str | None = None,
-    date: str | None = None,
-    bib_path: str | None = None,
-    pdf_path: str | None = None,
-    notes: str | None = None,
-    pdf_text: str | None = None,
-):
-    _init()
-    session = _Session()
-    paper = Paper(
-        reference=reference,
-        title=title,
-        authors=authors,
-        date=date,
-        bib_path=str(bib_path) if bib_path else None,
-        pdf_path=str(pdf_path) if pdf_path else None,
-        notes=notes,
-        pdf_text=pdf_text,
-    )
-    session.add(paper)
-    session.commit()
-    session.refresh(paper)
-    session.expunge(paper)
-    session.close()
-    return paper
+def insert_collection(collection: papers.models.Collection) -> int:
+    with engine.begin() as connection:
+        result = connection.execute(
+            sqla.insert(collection_table),
+            {
+                'name': collection.name,
+            },
+        )
+    assert result.inserted_primary_key is not None
+    assert len(result.inserted_primary_key) == 1
+
+    return result.inserted_primary_key[0]
 
 
-def update(
-    id: int,
-    title: str | None = None,
-    authors: str | None = None,
-    date: str | None = None,
-    bib_path: str | None = None,
-    pdf_path: str | None = None,
-    notes: str | None = None,
-    pdf_text: str | None = None,
-):
-    _init()
-    session = _Session()
-    paper = session.query(Paper).filter(Paper.id == id).first()
-    if paper:
-        if title is not None:
-            paper.title = title  # type: ignore
-        if authors is not None:
-            paper.authors = authors  # type: ignore
-        if date is not None:
-            paper.date = date  # type: ignore
-        if bib_path is not None:
-            paper.bib_path = bib_path  # type: ignore
-        if pdf_path is not None:
-            paper.pdf_path = pdf_path  # type: ignore
-        if notes is not None:
-            paper.notes = notes  # type: ignore
-        if pdf_text is not None:
-            paper.pdf_text = pdf_text  # type: ignore
-        session.commit()
-        session.refresh(paper)
-        session.expunge(paper)
-    session.close()
-    return paper
+def update_collection(collection: papers.models.Collection) -> None:
+    with engine.begin() as connection:
+        connection.execute(
+            sqla.update(collection_table)
+            .where(collection_table.c.id == collection.id)
+            .values(**{k: v for k, v in vars(collection).items() if k != 'id' and v is not None}),
+        )
 
 
-def query(id: int | None = None, title: str | None = None, authors: str | None = None, date: str | None = None):
-    _init()
-    session = _Session()
-    q = session.query(Paper)
-    if id is not None:
-        q = q.filter(Paper.id == id)
-    if title:
-        q = q.filter(Paper.title.ilike(f'%{title}%'))
-    if authors:
-        q = q.filter(Paper.authors.ilike(f'%{authors}%'))
-    if date:
-        q = q.filter(Paper.date == date)
-    result = q.all()
-    for paper in result:
-        session.expunge(paper)
-    session.close()
-    return result
+def remove_collection(collection_id: int) -> None:
+    with engine.begin() as connection:
+        connection.execute(
+            sqla.delete(collection_table),
+            {
+                'id': collection_id,
+            },
+        )
 
 
-def search(query: str):
-    _init()
-    session = _Session()
-    search_string = f'%{query}%'
-    q = session.query(Paper).filter(
-        (Paper.title.ilike(search_string))
-        | (Paper.authors.ilike(search_string))
-        | (Paper.notes.ilike(search_string))
-        | (Paper.pdf_text.ilike(search_string))
-    )
-    result = q.all()
-    for paper in result:
-        session.expunge(paper)
-    session.close()
-    return result
+def add_paper_to_collection(paper_id: int, collection_id: int) -> None:
+    with engine.begin() as connection:
+        connection.execute(
+            sqla.insert(paper_collection_table),
+            {
+                'paper_id': paper_id,
+                'collection_id': collection_id,
+            },
+        )
+
+
+def remove_paper_from_collection(paper_id: int, collection_id: int) -> None:
+    with engine.begin() as connection:
+        connection.execute(
+            sqla.delete(paper_collection_table),
+            {
+                'paper_id': paper_id,
+                'collection_id': collection_id,
+            },
+        )
+
+
+def query_paper(paper_id: int) -> papers.models.Paper:
+    with engine.connect() as connection:
+        result = connection.execute(sqla.select(paper_table).where(paper_table.c.id == paper_id)).first()
+    if result is None:
+        raise ValueError(f'Paper with id {paper_id} not found')
+    return papers.models.Paper(**result._asdict())
+
+
+def query_papers(collection_id: int | None = None) -> list[papers.models.Paper]:
+    with engine.connect() as connection:
+        query = sqla.select(paper_table)
+        if collection_id is not None:
+            query = query.join(paper_collection_table).filter(paper_collection_table.c.collection_id == collection_id)
+        result = connection.execute(query)
+    return [papers.models.Paper(**row._asdict()) for row in result]
+
+
+def query_collections() -> list[papers.models.Collection]:
+    with engine.connect() as connection:
+        result = connection.execute(sqla.select(collection_table))
+    return [papers.models.Collection(**row._asdict()) for row in result]
+
+
+def search_papers(query_string: str, collection_id: int | None = None) -> list[papers.models.Paper]:
+    with engine.connect() as connection:
+        query = sqla.select(paper_table)
+        if collection_id is not None:
+            query = query.join(paper_collection_table).filter(paper_collection_table.c.collection_id == collection_id)
+        query = query.filter(
+            paper_table.c.title.ilike(f'%{query_string}%')
+            | paper_table.c.authors.ilike(f'%{query_string}%')
+            | paper_table.c.notes.ilike(f'%{query_string}%')
+            | paper_table.c.pdf_text.ilike(f'%{query_string}%')
+        )
+        result = connection.execute(query)
+    return [papers.models.Paper(**row._asdict()) for row in result]

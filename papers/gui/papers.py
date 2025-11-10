@@ -2,6 +2,7 @@ from PySide6 import QtCore, QtWidgets
 
 import papers.gui.components.paper_list
 import papers.gui.components.search
+import papers.models
 
 
 class Papers(QtWidgets.QWidget):
@@ -15,7 +16,6 @@ class Papers(QtWidgets.QWidget):
         super().__init__()
 
         layout = QtWidgets.QVBoxLayout()
-        # layout.setContentsMargins(0, 0, 0, 0)
         self.setLayout(layout)
 
         self.search_box = papers.gui.components.search.SearchBox('Search papers')
@@ -28,6 +28,9 @@ class Papers(QtWidgets.QWidget):
         self.paper_list.open_pdf_requested.connect(self.open_pdf_requested)
         self.paper_list.item_selected.connect(self.item_selected)
         layout.addWidget(self.paper_list)
+
+    def insert_paper(self, paper: papers.models.Paper):
+        self.paper_list.insert_paper(paper)
 
     def show_all(self):
         self.paper_list.show_all()

@@ -2,14 +2,15 @@ from typing import cast
 
 from PySide6 import QtCore, QtGui, QtWidgets
 
-import papers.gui.components.overlays
 import papers.gui.components.lists
+import papers.gui.components.overlays
+import papers.models
 
 
 class PaperListItem(QtWidgets.QWidget):
     link_pdf_requested = QtCore.Signal(str)
 
-    def __init__(self, reference: str, title: str, authors: str, year: int):
+    def __init__(self, reference: str, title: str, authors: str, date: str):
         super().__init__()
 
         self.reference = reference
@@ -28,9 +29,9 @@ class PaperListItem(QtWidgets.QWidget):
         authors_label.setStyleSheet('color: #666666;')
         layout.addWidget(authors_label, 1, 0)
 
-        year_label = QtWidgets.QLabel(str(year))
-        year_label.setStyleSheet('color: #666666;')
-        layout.addWidget(year_label, 1, 1, alignment=QtCore.Qt.AlignmentFlag.AlignRight)
+        date_label = QtWidgets.QLabel(date)
+        date_label.setStyleSheet('color: #666666;')
+        layout.addWidget(date_label, 1, 1, alignment=QtCore.Qt.AlignmentFlag.AlignRight)
 
         spacer = QtWidgets.QSpacerItem(8, 1)
         layout.addItem(spacer, 0, 2, 2, 1)
@@ -97,15 +98,14 @@ class PaperListWidget(papers.gui.components.lists.ListWidget):
             """
         )
 
-    def insert_paper(self, id: int, reference: str, title: str, authors: str, year: int, index: int = 0):
-        """Add a project to the list."""
+    def insert_paper(self, paper: papers.models.Paper, index: int = 0):
         item = QtWidgets.QListWidgetItem(self)
-        widget = PaperListItem(reference, title, authors, year)
-        widget.link_pdf_requested.connect(lambda path: self.link_pdf_requested.emit(id, path))
+        widget = PaperListItem(paper.reference or '', paper.title or '', paper.authors or '', paper.date or '')
+        widget.link_pdf_requested.connect(lambda path: self.link_pdf_requested.emit(paper.id, path))
         item.setSizeHint(widget.sizeHint())
         self.insertItem(index, item)
         self.setItemWidget(item, widget)
-        item.setData(QtCore.Qt.ItemDataRole.UserRole, id)
+        item.setData(QtCore.Qt.ItemDataRole.UserRole, paper.id)
 
     def show_all(self):
         for i in range(self.count()):
@@ -117,15 +117,6 @@ class PaperListWidget(papers.gui.components.lists.ListWidget):
             item = self.item(i)
             item.setHidden(item.data(QtCore.Qt.ItemDataRole.UserRole) not in ids)
 
-    def filter_items(self, text: str):
-        """Filter items based on search text."""
-        search_text = text.lower()
-
-        for i in range(self.count()):
-            item = self.item(i)
-            # TODO: Use proper filtering
-            item.setHidden(search_text not in item.data(QtCore.Qt.ItemDataRole.UserRole).lower())
-
     def send_selection_changed(self):
         selection = self.selectedItems()
         if selection:
@@ -136,7 +127,13 @@ class PaperListWidget(papers.gui.components.lists.ListWidget):
         if event.key() == QtCore.Qt.Key.Key_C and event.modifiers() == QtCore.Qt.KeyboardModifier.ControlModifier:
             item = self.selectedItems()[0]
             widget = cast(PaperListItem, self.itemWidget(item))
-            print(widget.reference)
+            clipboard = QtWidgets.QApplication.clipboard()
+            clipboard.setText(widget.reference)
+        elif event.key() == QtCore.Qt.Key.Key_Return:
+            item = self.selectedItems()[0]
+            self.open_pdf_requested.emit(item.data(QtCore.Qt.ItemDataRole.UserRole))
+        else:
+            super().keyPressEvent(event)
 
     def contextMenuEvent(self, event: QtGui.QContextMenuEvent) -> None:
         """Show context menu for list items."""
@@ -176,3 +173,12 @@ class PaperListWidget(papers.gui.components.lists.ListWidget):
         self.add_requested.emit(path)
 
         event.accept()
+
+    def mimeData(self, items: list[QtWidgets.QListWidgetItem]) -> QtCore.QMimeData:
+        mime_data = super().mimeData(items)
+        if items:
+            item = items[0]
+            paper_id = item.data(QtCore.Qt.ItemDataRole.UserRole)
+            if paper_id is not None:
+                mime_data.setData('application/x-paper-id', str(paper_id).encode())
+        return mime_data

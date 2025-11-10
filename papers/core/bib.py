@@ -1,17 +1,9 @@
-import dataclasses
 import subprocess
 import tempfile
 
 import lxml.etree
 
-
-@dataclasses.dataclass
-class Paper:
-    reference: str
-    title: str
-    date: str
-    authors: list[str]
-
+import papers.models
 
 BIBLATEXML_NAMESPACE = 'http://biblatex-biber.sourceforge.net/biblatexml'
 
@@ -41,7 +33,8 @@ def parse_bib_file(file_path: str):
         _extract_name(name)
         for name in entry.xpath('bltx:names[@type="author"]/bltx:name', namespaces={'bltx': BIBLATEXML_NAMESPACE})
     ]
-    return Paper(reference=reference, title=title, date=date, authors=authors)
+    authors_string = ', '.join(authors[:-1]) + ' & ' + authors[-1] if len(authors) > 1 else authors[0]
+    return papers.models.Paper(reference=reference, title=title, date=date, authors=authors_string)
 
 
 def _extract_name(name) -> str:
