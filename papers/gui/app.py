@@ -11,6 +11,7 @@ import papers.models
 
 class ApplicationWindow(QtWidgets.QMainWindow):
     add_paper_requested = QtCore.Signal(str)
+    remove_paper_requested = QtCore.Signal(int)
     add_collection_requested = QtCore.Signal(str)
     add_paper_to_collection_requested = QtCore.Signal(int, int)
     link_pdf_requested = QtCore.Signal(int, str)
@@ -35,6 +36,7 @@ class ApplicationWindow(QtWidgets.QMainWindow):
         self.papers = papers.gui.papers.Papers()
         self.papers.search_text_changed.connect(self.search)
         self.papers.add_requested.connect(self.add_paper_requested)
+        self.papers.remove_requested.connect(self.remove_paper_requested)
         self.papers.link_pdf_requested.connect(self.link_pdf_requested)
         self.papers.open_pdf_requested.connect(self.open_pdf_requested)
         self.papers.item_selected.connect(self.paper_selected)
@@ -55,13 +57,17 @@ class ApplicationWindow(QtWidgets.QMainWindow):
     def add_paper(self, paper: papers.models.Paper):
         self.papers.insert_paper(paper)
 
+    def remove_paper(self, id: int):
+        self.papers.remove_paper(id)
+
     def add_collection(self, collection: papers.models.Collection):
         self.collections.insert_collection(collection)
 
     def paper_selected(self, id: int):
         self.current_paper_id = id
         paper = papers.core.database.query_paper(id)
-        self.information.notes_view.setPlainText(cast(str, paper.notes) or '')
+        self.information.set_notes(paper.notes or '')
+        self.information.set_collections(papers.core.database.query_collections(id))
 
     def collection_selected(self, id: int | None):
         self.current_collection_id = id

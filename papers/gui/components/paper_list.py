@@ -61,7 +61,7 @@ class PaperListItem(QtWidgets.QWidget):
 
 
 class PaperListWidget(papers.gui.components.lists.ListWidget):
-    remove_requested = QtCore.Signal(str)
+    remove_requested = QtCore.Signal(int)
 
     item_selected = QtCore.Signal(int)
     add_requested = QtCore.Signal(str)
@@ -99,13 +99,20 @@ class PaperListWidget(papers.gui.components.lists.ListWidget):
         )
 
     def insert_paper(self, paper: papers.models.Paper, index: int = 0):
-        item = QtWidgets.QListWidgetItem(self)
+        item = QtWidgets.QListWidgetItem()
         widget = PaperListItem(paper.reference or '', paper.title or '', paper.authors or '', paper.date or '')
         widget.link_pdf_requested.connect(lambda path: self.link_pdf_requested.emit(paper.id, path))
         item.setSizeHint(widget.sizeHint())
         self.insertItem(index, item)
         self.setItemWidget(item, widget)
         item.setData(QtCore.Qt.ItemDataRole.UserRole, paper.id)
+
+    def remove_paper(self, id: int):
+        for i in range(self.count()):
+            item = self.item(i)
+            if item.data(QtCore.Qt.ItemDataRole.UserRole) == id:
+                self.takeItem(i)
+                break
 
     def show_all(self):
         for i in range(self.count()):
@@ -136,14 +143,13 @@ class PaperListWidget(papers.gui.components.lists.ListWidget):
             super().keyPressEvent(event)
 
     def contextMenuEvent(self, event: QtGui.QContextMenuEvent) -> None:
-        """Show context menu for list items."""
         item = self.itemAt(event.pos())
         if item is None:
             return
 
         menu = QtWidgets.QMenu()
         menu.addAction(
-            'Remove from Recent Projects',
+            'Remove paper',
             lambda: self.remove_requested.emit(item.data(QtCore.Qt.ItemDataRole.UserRole)),
         )
         menu.exec(event.globalPos())

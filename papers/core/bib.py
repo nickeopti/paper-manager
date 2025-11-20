@@ -39,7 +39,11 @@ def parse_bib_file(file_path: str):
 
 def _extract_name(name) -> str:
     family_elem = name.xpath('bltx:namepart[@type="family"]', namespaces={'bltx': BIBLATEXML_NAMESPACE})[0]
-    family = family_elem.text
+    nested_family = family_elem.xpath('bltx:namepart', namespaces={'bltx': BIBLATEXML_NAMESPACE})
+    if nested_family:
+        family = ' '.join(part.text for part in nested_family if part.text)
+    else:
+        family = family_elem.text
 
     given_elem = name.xpath('bltx:namepart[@type="given"]', namespaces={'bltx': BIBLATEXML_NAMESPACE})[0]
     nested_given = given_elem.xpath('bltx:namepart', namespaces={'bltx': BIBLATEXML_NAMESPACE})
@@ -47,4 +51,15 @@ def _extract_name(name) -> str:
         given = ' '.join(part.text for part in nested_given if part.text)
     else:
         given = given_elem.text
-    return f'{given} {family}'
+
+    prefix_elems = name.xpath('bltx:namepart[@type="prefix"]', namespaces={'bltx': BIBLATEXML_NAMESPACE})
+    if prefix_elems:
+        prefix_elem = prefix_elems[0]
+        nested_prefix = prefix_elem.xpath('bltx:namepart', namespaces={'bltx': BIBLATEXML_NAMESPACE})
+        if nested_prefix:
+            prefix = ' '.join(part.text for part in nested_prefix if part.text)
+        else:
+            prefix = prefix_elem.text
+        return f'{given} {prefix} {family}'
+    else:
+        return f'{given} {family}'

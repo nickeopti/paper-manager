@@ -18,7 +18,7 @@ def main():
     window = papers.gui.app.create_app()
 
     entries = papers.core.database.query_papers()
-    for entry in entries:
+    for entry in sorted(entries, key=lambda x: x.id or -1, reverse=False):
         window.add_paper(entry)
 
     entries = papers.core.database.query_collections()
@@ -35,6 +35,10 @@ def main():
         bib_path.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy(path, bib_path)
 
+    def remove_paper(id: int) -> None:
+        papers.core.database.remove_paper(id)
+        window.remove_paper(id)
+
     def add_collection(name: str) -> None:
         collection = papers.models.Collection(name=name)
         collection.id = papers.core.database.insert_collection(collection)
@@ -45,6 +49,7 @@ def main():
         papers.core.database.add_paper_to_collection(paper_id, collection_id)
 
     window.add_paper_requested.connect(add_paper)
+    window.remove_paper_requested.connect(remove_paper)
     window.add_collection_requested.connect(add_collection)
     window.add_paper_to_collection_requested.connect(add_paper_to_collection)
     window.link_pdf_requested.connect(link_pdf)

@@ -14,7 +14,7 @@ if 'production' not in sys.argv[1:]:
 db_path = papers.configuration.configuration.root_directory / 'papers.db'
 db_path.parent.mkdir(parents=True, exist_ok=True)
 
-engine = sqla.create_engine(f'sqlite:///{db_path}', echo=True)
+engine = sqla.create_engine(f'sqlite:///{db_path}', echo='production' not in sys.argv[1:])
 
 metadata = MetaData()
 
@@ -42,8 +42,8 @@ collection_table = Table(
 paper_collection_table = Table(
     'paper_collection',
     metadata,
-    Column('paper_id', Integer, ForeignKey('paper.id'), primary_key=True),
-    Column('collection_id', Integer, ForeignKey('collection.id'), primary_key=True),
+    Column('paper_id', Integer, ForeignKey('paper.id', ondelete='CASCADE'), primary_key=True),
+    Column('collection_id', Integer, ForeignKey('collection.id', ondelete='CASCADE'), primary_key=True),
 )
 
 
@@ -81,10 +81,7 @@ def update_paper(paper_id: int, **fields: Any) -> None:
 def remove_paper(paper_id: int) -> None:
     with engine.begin() as connection:
         connection.execute(
-            sqla.delete(paper_table),
-            {
-                'id': paper_id,
-            },
+            sqla.delete(paper_table).where(paper_table.c.id == paper_id),
         )
 
 
@@ -114,32 +111,38 @@ def update_collection(collection: papers.models.Collection) -> None:
 def remove_collection(collection_id: int) -> None:
     with engine.begin() as connection:
         connection.execute(
-            sqla.delete(collection_table),
-            {
-                'id': collection_id,
-            },
+            sqla.delete(collection_table).where(collection_table.c.id == collection_id),
         )
 
 
 def add_paper_to_collection(paper_id: int, collection_id: int) -> None:
     with engine.begin() as connection:
-        connection.execute(
-            sqla.insert(paper_collection_table),
-            {
-                'paper_id': paper_id,
-                'collection_id': collection_id,
-            },
-        )
+        # Check if the relationship already exists
+        existing = connection.execute(
+            sqla.select(paper_collection_table).where(
+                paper_collection_table.c.paper_id == paper_id,
+                paper_collection_table.c.collection_id == collection_id,
+            )
+        ).first()
+
+        # Only insert if it doesn't already exist
+        if existing is None:
+            connection.execute(
+                sqla.insert(paper_collection_table),
+                {
+                    'paper_id': paper_id,
+                    'collection_id': collection_id,
+                },
+            )
 
 
 def remove_paper_from_collection(paper_id: int, collection_id: int) -> None:
     with engine.begin() as connection:
         connection.execute(
-            sqla.delete(paper_collection_table),
-            {
-                'paper_id': paper_id,
-                'collection_id': collection_id,
-            },
+            sqla.delete(paper_collection_table).where(
+                paper_collection_table.c.paper_id == paper_id,
+                paper_collection_table.c.collection_id == collection_id,
+            ),
         )
 
 
@@ -160,9 +163,12 @@ def query_papers(collection_id: int | None = None) -> list[papers.models.Paper]:
     return [papers.models.Paper(**row._asdict()) for row in result]
 
 
-def query_collections() -> list[papers.models.Collection]:
+def query_collections(paper_id: int | None = None) -> list[papers.models.Collection]:
     with engine.connect() as connection:
-        result = connection.execute(sqla.select(collection_table))
+        query = sqla.select(collection_table)
+        if paper_id is not None:
+            query = query.join(paper_collection_table).filter(paper_collection_table.c.paper_id == paper_id)
+        result = connection.execute(query)
     return [papers.models.Collection(**row._asdict()) for row in result]
 
 
